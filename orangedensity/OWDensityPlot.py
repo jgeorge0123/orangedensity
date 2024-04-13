@@ -25,6 +25,9 @@ class OWDensityPlot(widget.OWWidget):
     squareAspectRatio = Setting(0)
     densityType = Setting("2D Histogram")
 
+    useManualKDEBandwidth = Setting(0)
+    manualKDEBandwidth = Setting(0.5)
+
     class Inputs:
         data = Input("Data", Orange.data.Table)
 
@@ -99,6 +102,23 @@ class OWDensityPlot(widget.OWWidget):
             label="Square Aspect Ratio",
             callback=[self.selection, self.checkCommit]
         )
+        gui.checkBox(
+            self.optionsBox,
+            self,
+            "useManualKDEBandwidth",
+            label="Manual KDE Bandwidth",
+            callback=[self.selection, self.checkCommit]
+        )
+        self.manualKDEBandwidthDoubleSpin = gui.doubleSpin(
+            self.optionsBox,
+            self,
+            "manualKDEBandwidth",
+            label="KDE Bandwidth",
+            step=0.001,
+            minv=0,
+            maxv=100000000,
+            callback=[self.selection, self.checkCommit]
+        )
 
         # main area
         gui.widgetBox(self.mainArea, orientation="vertical")
@@ -158,9 +178,12 @@ class OWDensityPlot(widget.OWWidget):
             X, Y = np.meshgrid(xs,ys)
             positions = np.vstack([X.ravel(), Y.ravel()])
             values = np.vstack([xVals, yVals])
-            kernel = stats.gaussian_kde(values)
+            bw_method = None
+            if self.useManualKDEBandwidth:
+                bw_method = self.manualKDEBandwidth
+            kernel = stats.gaussian_kde(values, bw_method=bw_method)
             Z = np.reshape(kernel(positions).T, X.shape)
-            density = Z
+            density = Z.T
 
         self.imv.setColorMap(pg.colormap.get(str(self.colormap), source=None))
         self.imv.setImage(density)

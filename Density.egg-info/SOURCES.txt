@@ -1,0 +1,9 @@
+setup.py
+Density.egg-info/PKG-INFO
+Density.egg-info/SOURCES.txt
+Density.egg-info/dependency_links.txt
+Density.egg-info/entry_points.txt
+Density.egg-info/top_level.txt
+orangedensity/OWDensityPlot.py
+orangedensity/__init__.py
+orangedensity/icons/OWDensityPlot.svg

@@ -1,5 +1,6 @@
 import sys
 import numpy as np
+from scipy import stats
 import pyqtgraph as pg
 import Orange.data
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -18,10 +19,11 @@ class OWDensityPlot(widget.OWWidget):
     resizing_enabled = True
     xbins = Setting(10)
     ybins = Setting(10)
-    colormap = Setting("viridis")
+    colormap = Setting("turbo")
     xvariable = Setting("")
     yvariable = Setting("")
     squareAspectRatio = Setting(0)
+    densityType = Setting("2D Histogram")
 
     class Inputs:
         data = Input("Data", Orange.data.Table)
@@ -36,6 +38,15 @@ class OWDensityPlot(widget.OWWidget):
         gui.separator(self.controlArea)
 
         self.optionsBox = gui.widgetBox(self.controlArea, "Options")
+        self.comboBoxType = gui.comboBox(
+            self.optionsBox,
+            self,
+            "densityType",
+            label="Density Type",
+            items=["2D Histogram", "Gaussian KDE"],
+            sendSelectedValue=True,
+            callback=[self.selection, self.checkCommit]
+        )
         self.comboBoxXVariable = gui.comboBox(
             self.optionsBox,
             self,
@@ -132,14 +143,28 @@ class OWDensityPlot(widget.OWWidget):
 
         xVals = np.array(self.dataset[:, indexXVar]).flatten()
         yVals = np.array(self.dataset[:, indexYVar]).flatten()
-        hist,xEdges,yEdges = np.histogram2d(xVals, yVals, bins=(self.xbins, self.ybins))
-        self.imv.setColorMap(pg.colormap.get(str(self.colormap), source=None))
-        self.imv.setImage(hist)
-        self.imv.view.invertY(False)
+
         minX = np.min(xVals)
         maxX = np.max(xVals)
         minY = np.min(yVals)
         maxY = np.max(yVals)
+
+        if self.densityType == "2D Histogram":
+            hist,xEdges,yEdges = np.histogram2d(xVals, yVals, bins=(self.xbins, self.ybins))
+            density = hist
+        else:
+            xs = np.linspace(minX, maxX, self.xbins)
+            ys = np.linspace(minY, maxY, self.ybins)
+            X, Y = np.meshgrid(xs,ys)
+            positions = np.vstack([X.ravel(), Y.ravel()])
+            values = np.vstack([xVals, yVals])
+            kernel = stats.gaussian_kde(values)
+            Z = np.reshape(kernel(positions).T, X.shape)
+            density = Z
+
+        self.imv.setColorMap(pg.colormap.get(str(self.colormap), source=None))
+        self.imv.setImage(density)
+        self.imv.view.invertY(False)
         histBounds = QtCore.QRectF(minX, minY, maxX-minX, maxY-minY)
         self.imv.getImageItem().setRect(histBounds)
         if self.squareAspectRatio > 0:

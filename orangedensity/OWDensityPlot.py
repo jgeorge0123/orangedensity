@@ -19,7 +19,9 @@ class OWDensityPlot(widget.OWWidget):
     xbins = Setting(10)
     ybins = Setting(10)
     colormap = Setting("viridis")
-    commitOnChange = Setting(0)
+    xvariable = Setting("")
+    yvariable = Setting("")
+    squareAspectRatio = Setting(0)
 
     class Inputs:
         data = Input("Data", Orange.data.Table)
@@ -29,19 +31,24 @@ class OWDensityPlot(widget.OWWidget):
 
         # GUI
         # control area
-        box = gui.widgetBox(self.controlArea, "Info")
-        self.infoa = gui.widgetLabel(
-            box, "No data on input yet, waiting to get something."
-        )
+        box = gui.widgetBox(self.controlArea)
         self.infob = gui.widgetLabel(box, "")
         gui.separator(self.controlArea)
+
         self.optionsBox = gui.widgetBox(self.controlArea, "Options")
-        gui.comboBox(
+        self.comboBoxXVariable = gui.comboBox(
             self.optionsBox,
             self,
-            "colormap",
-            items=pg.colormap.listMaps(),
-            label="Color Map",
+            "xvariable",
+            label="X Variable",
+            sendSelectedValue=True,
+            callback=[self.selection, self.checkCommit]
+        )
+        self.comboBoxYVariable = gui.comboBox(
+            self.optionsBox,
+            self,
+            "yvariable",
+            label="Y Variable",
             sendSelectedValue=True,
             callback=[self.selection, self.checkCommit]
         )
@@ -65,48 +72,83 @@ class OWDensityPlot(widget.OWWidget):
             label="Y Bins",
             callback=[self.selection, self.checkCommit],
         )
-        gui.checkBox(
-            self.optionsBox, self, "commitOnChange", "Commit data on selection change"
+        gui.comboBox(
+            self.optionsBox,
+            self,
+            "colormap",
+            items=pg.colormap.listMaps(),
+            label="Color Map",
+            sendSelectedValue=True,
+            callback=[self.selection, self.checkCommit]
         )
-        gui.button(self.optionsBox, self, "Commit", callback=self.commit)
-
-        #self.optionsBox.setDisabled(True)
+        gui.checkBox(
+            self.optionsBox,
+            self,
+            "squareAspectRatio",
+            label="Square Aspect Ratio",
+            callback=[self.selection, self.checkCommit]
+        )
 
         # main area
         gui.widgetBox(self.mainArea, orientation="vertical")
-
         self.plotItem = pg.PlotItem()
         self.imv = pg.ImageView(view=self.plotItem)
         self.imv.setColorMap(pg.colormap.get(self.colormap))
         self.mainArea.layout().addWidget(self.imv)
+        self.dataset =  None
 
     @Inputs.data
     def set_data(self, dataset):
         if dataset is not None:
-            self.infoa.setText("%d instances in input data set" % len(dataset))
-            indices = np.random.permutation(len(dataset))
-            indices = indices[:int(np.ceil(len(dataset) * 0.1))]
+
+            varnames = []
+            for vardomain in dataset.domain:
+                varnames.append(str(vardomain))
+            self.comboBoxXVariable.clear()
+            self.comboBoxXVariable.addItems(varnames)
+            self.comboBoxXVariable.setCurrentText(self.xvariable)
+            self.comboBoxYVariable.clear()
+            self.comboBoxYVariable.addItems(varnames)
+            self.comboBoxYVariable.setCurrentText(self.yvariable)
+            self.dataset = dataset
+            if self.xvariable == "":
+                self.xvariable = self.comboBoxXVariable.currentText()
+            if self.yvariable == "":
+                self.yvariable = self.comboBoxYVariable.currentText()
             self.updatePlot()
-        else:
-            self.infoa.setText(
-                "No data on input yet, waiting to get something.")
-            self.infob.setText('')
 
     def updatePlot(self):
-        xs = np.linspace(0,1,self.xbins)
-        ys = np.linspace(0,1,self.ybins)
-        X,Y = np.meshgrid(xs,ys)
-        data = X + np.sin(Y)
+        indexXVar = 0
+        try:
+            indexXVar = self.dataset.domain.index(self.xvariable)
+        except:
+            print(f'XVariable {self.xvariable} not found.')
+        
+        indexYVar = 0
+        try:
+            indexYVar = self.dataset.domain.index(self.yvariable)
+        except:
+            print(f'YVariable {self.yvariable} not found.')
 
+        xVals = np.array(self.dataset[:, indexXVar]).flatten()
+        yVals = np.array(self.dataset[:, indexYVar]).flatten()
+        hist,xEdges,yEdges = np.histogram2d(xVals, yVals, bins=(self.xbins, self.ybins))
         self.imv.setColorMap(pg.colormap.get(str(self.colormap), source=None))
-        self.imv.setImage(data)
+        self.imv.setImage(hist)
         self.imv.view.invertY(False)
-        self.imv.getImageItem().setRect(QtCore.QRectF(0,0,1,1))
-        self.plotItem.autoRange()
-    
+        minX = np.min(xVals)
+        maxX = np.max(xVals)
+        minY = np.min(yVals)
+        maxY = np.max(yVals)
+        histBounds = QtCore.QRectF(minX, minY, maxX-minX, maxY-minY)
+        self.imv.getImageItem().setRect(histBounds)
+        if self.squareAspectRatio > 0:
+            self.plotItem.getViewBox().setAspectLocked(True)
+        else:
+            self.plotItem.getViewBox().setAspectLocked(False)
+        self.plotItem.getViewBox().setRange(histBounds, disableAutoRange=True)
+        
     def selection(self):
-        #if self.dataset is None:
-        #    return
         print('selection')
 
     def commit(self):
@@ -114,9 +156,6 @@ class OWDensityPlot(widget.OWWidget):
 
     def checkCommit(self):
         self.updatePlot()
-        #print('checkCommit')
-        #if self.commitOnChange:
-            #self.commit()
 
 def main(argv=sys.argv):
     from AnyQt.QtWidgets import QApplication

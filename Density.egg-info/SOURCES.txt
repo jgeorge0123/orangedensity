@@ -1,3 +1,5 @@
+LICENSE
+README.md
 setup.py
 Density.egg-info/PKG-INFO
 Density.egg-info/SOURCES.txt

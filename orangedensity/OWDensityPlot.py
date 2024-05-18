@@ -24,12 +24,13 @@ class OWDensityPlot(widget.OWWidget):
     yvariable = Setting("")
     squareAspectRatio = Setting(0)
     densityType = Setting("2D Histogram")
-
     useManualKDEBandwidth = Setting(0)
     manualKDEBandwidth = Setting(0.5)
+    compare = Setting(0)
 
     class Inputs:
         data = Input("Data", Orange.data.Table)
+        dataB = Input("Data Compare", Orange.data.Table)
 
     def __init__(self):
         super().__init__()
@@ -119,6 +120,13 @@ class OWDensityPlot(widget.OWWidget):
             maxv=100000000,
             callback=[self.selection, self.checkCommit]
         )
+        gui.checkBox(
+            self.optionsBox,
+            self,
+            "compare",
+            label="Compare distributions",
+            callback=[self.selection, self.checkCommit]
+        )
 
         # main area
         gui.widgetBox(self.mainArea, orientation="vertical")
@@ -126,12 +134,12 @@ class OWDensityPlot(widget.OWWidget):
         self.imv = pg.ImageView(view=self.plotItem)
         self.imv.setColorMap(pg.colormap.get(self.colormap))
         self.mainArea.layout().addWidget(self.imv)
-        self.dataset =  None
+        self.dataset = None
+        self.datasetB = None
 
     @Inputs.data
     def set_data(self, dataset):
         if dataset is not None:
-
             varnames = []
             for vardomain in dataset.domain:
                 varnames.append(str(vardomain))
@@ -147,28 +155,14 @@ class OWDensityPlot(widget.OWWidget):
             if self.yvariable == "":
                 self.yvariable = self.comboBoxYVariable.currentText()
             self.updatePlot()
+    
+    @Inputs.dataB
+    def set_dataB(self, dataset):
+        self.datasetB = dataset
+        self.updatePlot()
 
-    def updatePlot(self):
-        indexXVar = 0
-        try:
-            indexXVar = self.dataset.domain.index(self.xvariable)
-        except:
-            print(f'XVariable {self.xvariable} not found.')
-        
-        indexYVar = 0
-        try:
-            indexYVar = self.dataset.domain.index(self.yvariable)
-        except:
-            print(f'YVariable {self.yvariable} not found.')
-
-        xVals = np.array(self.dataset[:, indexXVar]).flatten()
-        yVals = np.array(self.dataset[:, indexYVar]).flatten()
-
-        minX = np.min(xVals)
-        maxX = np.max(xVals)
-        minY = np.min(yVals)
-        maxY = np.max(yVals)
-
+    def histogram(self, xVals, yVals, minX, maxX, minY, maxY):
+        density = None
         if self.densityType == "2D Histogram":
             hist,xEdges,yEdges = np.histogram2d(xVals, yVals, bins=(self.xbins, self.ybins))
             density = hist
@@ -184,17 +178,44 @@ class OWDensityPlot(widget.OWWidget):
             kernel = stats.gaussian_kde(values, bw_method=bw_method)
             Z = np.reshape(kernel(positions).T, X.shape)
             density = Z.T
+        return density
 
-        self.imv.setColorMap(pg.colormap.get(str(self.colormap), source=None))
-        self.imv.setImage(density)
-        self.imv.view.invertY(False)
-        histBounds = QtCore.QRectF(minX, minY, maxX-minX, maxY-minY)
-        self.imv.getImageItem().setRect(histBounds)
-        if self.squareAspectRatio > 0:
-            self.plotItem.getViewBox().setAspectLocked(True)
-        else:
-            self.plotItem.getViewBox().setAspectLocked(False)
-        self.plotItem.getViewBox().setRange(histBounds, disableAutoRange=True)
+    def updatePlot(self):
+        if self.dataset is not None:
+            indexXVar = 0
+            try:
+                indexXVar = self.dataset.domain.index(self.xvariable)
+            except:
+                print(f'XVariable {self.xvariable} not found.')
+            indexYVar = 0
+            try:
+                indexYVar = self.dataset.domain.index(self.yvariable)
+            except:
+                print(f'YVariable {self.yvariable} not found.')
+            xVals = np.array(self.dataset[:, indexXVar]).flatten()
+            yVals = np.array(self.dataset[:, indexYVar]).flatten()
+            minX = np.min(xVals)
+            maxX = np.max(xVals)
+            minY = np.min(yVals)
+            maxY = np.max(yVals)
+            density = self.histogram(xVals, yVals, minX, maxX, minY, maxY)
+
+            if self.datasetB is not None and self.compare > 0:
+                xVals = np.array(self.datasetB[:, indexXVar]).flatten()
+                yVals = np.array(self.datasetB[:, indexYVar]).flatten()
+                densityB = self.histogram(xVals, yVals, minX, maxX, minY, maxY)
+                density = density/np.sum(density.flatten()) - densityB/np.sum(densityB.flatten())
+
+            self.imv.setColorMap(pg.colormap.get(str(self.colormap), source=None))
+            self.imv.setImage(density)
+            self.imv.view.invertY(False)
+            histBounds = QtCore.QRectF(minX, minY, maxX-minX, maxY-minY)
+            self.imv.getImageItem().setRect(histBounds)
+            if self.squareAspectRatio > 0:
+                self.plotItem.getViewBox().setAspectLocked(True)
+            else:
+                self.plotItem.getViewBox().setAspectLocked(False)
+            self.plotItem.getViewBox().setRange(histBounds, disableAutoRange=True)
         
     def selection(self):
         print('selection')
